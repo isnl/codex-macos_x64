@@ -1,0 +1,117 @@
+name: Release Codex macOS x64
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 16 * * *" # Runs daily at 00:00 Asia/Shanghai (UTC+8).
+
+permissions:
+  contents: write
+
+concurrency:
+  group: codex-macos-x64-release
+  cancel-in-progress: false
+
+jobs:
+  build-and-release:
+    runs-on: macos-13
+    env:
+      CODEX_CHANGELOG_URL: https://developers.openai.com/codex/changelog?type=codex-app
+      CODEX_SOURCE_DMG_URL: https://persistent.oaistatic.com/codex-app-prod/Codex.dmg
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Enable pnpm via Corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@10 --activate
+          pnpm --version
+
+      - name: Resolve latest upstream metadata
+        id: upstream
+        run: node ./scripts/resolve-latest-release.mjs
+
+      - name: Check whether this version is already released
+        id: release_check
+        run: |
+          if gh release view "${{ steps.upstream.outputs.release_tag }}" >/dev/null 2>&1; then
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+            echo "Release already exists for ${{ steps.upstream.outputs.release_tag }}."
+          else
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            echo "New upstream version detected: ${{ steps.upstream.outputs.app_version }}."
+          fi
+
+      - name: Stop early when no update is available
+        if: steps.release_check.outputs.should_build != 'true'
+        run: echo "No new Codex app version to rebuild today."
+
+      - name: Install donor Codex CLI binaries
+        if: steps.release_check.outputs.should_build == 'true'
+        run: npm install --global @openai/codex
+
+      - name: Download upstream Apple Silicon DMG
+        if: steps.release_check.outputs.should_build == 'true'
+        run: |
+          curl -fL \
+            --retry 3 \
+            --retry-delay 5 \
+            --retry-all-errors \
+            -o Codex.dmg \
+            "${{ steps.upstream.outputs.source_dmg_url }}"
+
+      - name: Rebuild Intel DMG
+        if: steps.release_check.outputs.should_build == 'true'
+        run: ./rebuild-x64.sh "$PWD/Codex.dmg"
+
+      - name: Prepare release files
+        if: steps.release_check.outputs.should_build == 'true'
+        run: |
+          mkdir -p dist
+          mv output/Codex-x64.dmg "dist/${{ steps.upstream.outputs.asset_name }}"
+          shasum -a 256 "dist/${{ steps.upstream.outputs.asset_name }}" > "dist/${{ steps.upstream.outputs.checksum_name }}"
+          cat > dist/release-notes.md <<'EOF'
+          ## Overview
+
+          This release repackages the latest official Codex macOS app into an Intel-compatible `x86_64` DMG.
+
+          ## Upstream Build
+
+          Upstream version: ${{ steps.upstream.outputs.app_version }}
+          Upstream build number: ${{ steps.upstream.outputs.build_number }}
+          Upstream published at: ${{ steps.upstream.outputs.published_at }}
+          Upstream changelog: ${{ steps.upstream.outputs.changelog_url }}
+          Upstream appcast: ${{ steps.upstream.outputs.appcast_url }}
+          Upstream source DMG: ${{ steps.upstream.outputs.source_dmg_url }}
+          Upstream source ZIP: ${{ steps.upstream.outputs.source_zip_url }}
+
+          ## Install
+
+          1. Download the DMG and the matching `.sha256` file.
+          2. Verify the checksum locally before opening the DMG.
+          3. Drag `Codex.app` into `Applications`.
+          4. On first launch, right-click the app and choose `Open`.
+
+          ## Notes
+
+          - The upstream DMG URL is static, so version detection uses the official appcast feed.
+          - This rebuilt package is ad-hoc signed by the workflow and has auto-update disabled.
+          - SHA-256 checksums are included as a separate release asset.
+          EOF
+
+      - name: Publish GitHub release
+        if: steps.release_check.outputs.should_build == 'true'
+        run: |
+          gh release create "${{ steps.upstream.outputs.release_tag }}" \
+            "dist/${{ steps.upstream.outputs.asset_name }}" \
+            "dist/${{ steps.upstream.outputs.checksum_name }}" \
+            --latest \
+            --title "${{ steps.upstream.outputs.release_name }}" \
+            --notes-file dist/release-notes.md
