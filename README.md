@@ -48,11 +48,13 @@ shasum -a 256 -c codex-macos-x64-<version>.dmg.sha256
 
 3. Open the DMG and drag `Codex.app` into `Applications`.
 4. On first launch, right-click the app and choose `Open`.
-5. If macOS quarantine gets in the way, run:
+5. If macOS shows a security warning because this rebuilt app is not notarized by Apple, run:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/Codex.app
 ```
+
+The original upstream signature cannot be reused here. Once the app bundle is modified and repackaged for Intel, the original signature becomes invalid and macOS treats the rebuilt app as a new unsigned distribution unless it is signed and notarized again.
 
 ## What This Repository Does
 
@@ -174,6 +176,10 @@ No. It is an unofficial repackaging workflow built around the official Codex app
 ### Why is auto-update disabled?
 
 The rebuilt Intel package is not a standard upstream distribution, so bundled auto-update components are intentionally removed to avoid invalid update behavior.
+
+### Can the original upstream signature or notarization be reused?
+
+No. The upstream Codex app is modified during the rebuild process, including binary replacement, native module replacement, signature cleanup, and repackaging. Those changes invalidate the original signature, so the final Intel build must either be distributed as an ad-hoc signed app or be signed and notarized again with a valid Apple Developer identity.
 
 ### Why does the workflow use `appcast.xml` instead of scraping the changelog page?
 

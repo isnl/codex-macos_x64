@@ -48,11 +48,13 @@ shasum -a 256 -c codex-macos-x64-<version>.dmg.sha256
 
 3. 打开 DMG，把 `Codex.app` 拖到 `Applications`。
 4. 首次启动时，右键应用并选择 `Open`。
-5. 如果 macOS 隔离属性影响启动，可以执行：
+5. 如果 macOS 因为这个重打包版本没有 Apple notarization 而提示安全性警告，可以执行：
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/Codex.app
 ```
+
+这里不能直接沿用上游原始签名。因为应用包在重打包过程中已经被修改并重新封装为 Intel 版本，原签名会失效；对 macOS 来说，它就是一个新的、未重新 notarize 的分发产物。
 
 ## 这个仓库能做什么
 
@@ -174,6 +176,10 @@ output/Codex-x64.dmg
 ### 为什么要禁用自动更新？
 
 因为这个 Intel 包并不是上游原始分发形式，保留自动更新组件可能导致更新行为异常，所以构建时会主动移除相关能力。
+
+### 能直接沿用官方原始签名或 notarization 吗？
+
+不能。因为重打包流程里会替换二进制、替换原生模块、清理签名并重新封装应用，这些步骤都会让上游原始签名失效。所以最终的 Intel 版本，要么像现在这样以 ad-hoc 签名方式分发，要么就需要你自己用 Apple Developer 证书重新签名并重新 notarize。
 
 ### 为什么使用 `appcast.xml`，而不是直接抓 changelog 页面？
 

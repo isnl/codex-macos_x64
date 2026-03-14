@@ -98,12 +98,18 @@ jobs:
           2. Verify the checksum locally before opening the DMG.
           3. Drag `Codex.app` into `Applications`.
           4. On first launch, right-click the app and choose `Open`.
+          5. If macOS still blocks the app with a security warning, run:
+
+             ```bash
+             xattr -dr com.apple.quarantine /Applications/Codex.app
+             ```
 
           ## Notes
 
           - The upstream DMG URL is static, so version detection uses the official appcast feed.
           - This rebuilt package is ad-hoc signed by the workflow and has auto-update disabled.
           - SHA-256 checksums are included as a separate release asset.
+          - The original upstream signature cannot be reused after rebuilding and repackaging the app for Intel.
           EOF
 
       - name: Publish GitHub release
